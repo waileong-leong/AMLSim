@@ -5,7 +5,8 @@ from aml_simulator.transaction_graph_generator import get_in_and_out_degrees
 from aml_simulator.transaction_graph_generator import directed_configuration_model
 from .fixtures.conf import CONFIG
 from aml_simulator.amlsim.normal_model import NormalModel
-
+import pandas as pd 
+import re 
 def test_get_degrees():
     result = get_degrees('tests/csv/degree.csv', 12)
     assert result == (
@@ -14,42 +15,30 @@ def test_get_degrees():
     )
 
 def test_get_in_and_out_degrees_no_padding():
-    result = get_in_and_out_degrees([
-        ['1', '2', '4'],
-        ['2', '4', '2'],
-        ['1', '2', '4']
-    ], 4)
+    df = pd.DataFrame([[1,2,4],[2,4,2],[1,2,4]], columns=['count', 'in-degree', 'out-degree'])
+    result = get_in_and_out_degrees(df, 4)
     assert result == (
         [2, 4, 4, 2],
         [4, 2, 2, 4]
     )
 
 def test_get_in_and_out_degrees_padding():
-    result = get_in_and_out_degrees([
-        ['1', '2', '4'],
-        ['2', '4', '2'],
-        ['1', '2', '4']
-    ], 8)
+    df = pd.DataFrame([[1,2,4],[2,4,2],[1,2,4]], columns=['count', 'in-degree', 'out-degree'])
+    result = get_in_and_out_degrees(df, 8)
     assert result == (
         [2, 4, 4, 2, 2, 4, 4, 2],
         [4, 2, 2, 4, 4, 2, 2, 4]
     )
 
 def test_get_in_and_out_degrees_bad_mod_throws():
-    with pytest.raises(ValueError, match='The number of total accounts (7) must be a multiple of the degree sequence length (4).'):
-        get_in_and_out_degrees([
-            ['1', '2', '4'],
-            ['2', '4', '2'],
-            ['1', '2', '4']
-        ], 7)
+    df = pd.DataFrame([[1,2,4],[2,4,2],[1,2,4]], columns=['count', 'in-degree', 'out-degree'])
+    with pytest.raises(ValueError, match=re.escape('The number of total accounts (7) must be a multiple of the degree sequence length (4).')):
+        get_in_and_out_degrees(df, 7)
 
 def test_get_in_and_out_degrees_unequal_degrees_throws():
-    with pytest.raises(ValueError, match='The sum of in-degree (12) and out-degree (11) must be same.'):
-        get_in_and_out_degrees([
-            ['1', '2', '4'],
-            ['2', '4', '2'],
-            ['1', '2', '3']
-        ], 8)
+    df = pd.DataFrame([[1,2,4],[2,4,2],[1,2,3]], columns=['count', 'in-degree', 'out-degree'])
+    with pytest.raises(ValueError, match=re.escape('The sum of in-degree (12) and out-degree (11) must be same.')):
+        get_in_and_out_degrees(df, 8)
 
 def test_directed_configuration_model():
     G = directed_configuration_model(
@@ -77,7 +66,7 @@ def test_directed_configuration_model_no_self_loops():
         [0, 0, 2, 1, 1, 0, 0, 0, 1, 1, 0, 0],
         0
     )
-    assert G.selfloop_edges() == []
+    assert list(nx.selfloop_edges(G)) == []
 
 def test_directed_configuration_model_self_loops():
     G = directed_configuration_model(
@@ -97,7 +86,7 @@ def test_directed_configuration_model_self_loops():
     assert G.degree(9) == 0
     assert G.degree(10) == 0
     assert G.degree(11) == 0
-    assert G.selfloop_edges() == []
+    assert list(nx.selfloop_edges(G)) == []
 
 def test_mark_active_edges_marks_default_as_false():
     G = nx.DiGraph()

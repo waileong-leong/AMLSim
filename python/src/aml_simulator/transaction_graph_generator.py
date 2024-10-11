@@ -21,6 +21,7 @@ from aml_simulator.amlsim.normal_model import NormalModel
 
 from aml_simulator.amlsim.random_amount import RandomAmount
 from aml_simulator.amlsim.rounded_amount import RoundedAmount
+import pandas as pd
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -130,44 +131,35 @@ def get_degrees(deg_csv, num_v):
     :param num_v: Number of total account vertices
     :return: In-degree and out-degree sequence list
     """
-    with open(deg_csv, "r") as rf:  # Load in/out-degree sequences from parameter CSV file for each account
-        reader = csv.reader(rf)
-        next(reader)
-        return get_in_and_out_degrees(reader, num_v)
+    df = pd.read_csv(deg_csv, comment='#')
+    df.columns = [x.lower() for x in df.columns]
+    return get_in_and_out_degrees(df, num_v)
 
 
-def get_in_and_out_degrees(iterable, num_v):
-    _in_deg = list()  # In-degree sequence
-    _out_deg = list()  # Out-degree sequence
+def get_in_and_out_degrees(df, num_v):
+    # Repeat each row based on the 'count' column
+    df_expanded = df.loc[df.index.repeat(df['count'])]
     
-    for row in iterable:
-        if row[0].startswith("#"):
-            continue
-        count = int(row[0])
-        _in_deg.extend([int(row[1])] * count)
-        _out_deg.extend([int(row[2])] * count)
+    _in_deg = df_expanded['in-degree'].astype(int).tolist()
+    _out_deg = df_expanded['out-degree'].astype(int).tolist()
 
     in_len, out_len = len(_in_deg), len(_out_deg)
     if in_len != out_len:
-        raise ValueError("The length of in-degree (%d) and out-degree (%d) sequences must be same."
-                         % (in_len, out_len))
+        raise ValueError(f"The length of in-degree ({in_len}) and out-degree ({out_len}) sequences must be same.")
 
     total_in_deg, total_out_deg = sum(_in_deg), sum(_out_deg)
     if total_in_deg != total_out_deg:
-        raise ValueError("The sum of in-degree (%d) and out-degree (%d) must be same."
-                         % (total_in_deg, total_out_deg))
+        raise ValueError(f"The sum of in-degree ({total_in_deg}) and out-degree ({total_out_deg}) must be same.")
 
     if num_v % in_len != 0:
-        raise ValueError("The number of total accounts (%d) "
-                         "must be a multiple of the degree sequence length (%d)."
-                         % (num_v, in_len))
+        raise ValueError(f"The number of total accounts ({num_v}) "
+                         f"must be a multiple of the degree sequence length ({in_len}).")
 
     repeats = num_v // in_len
     _in_deg = _in_deg * repeats
     _out_deg = _out_deg * repeats
 
     return _in_deg, _out_deg
-
 
 class TransactionGenerator:
 
@@ -450,20 +442,8 @@ class TransactionGenerator:
                 count += 1
 
     def set_num_accounts(self):
-        with open(self.acct_file, "r") as rf:
-            reader = csv.reader(rf)
-            # Parse header
-            header = next(reader)
-
-            count = 0
-            for row in reader:
-                if row[0].startswith("#"):
-                    continue
-                num = int(row[header.index('count')])
-                count += num
-
-        self.num_accounts = count
-
+        df = pd.read_csv(self.acct_file, comment='#')
+        self.num_accounts = df['count'].sum()
 
     def load_account_list_param(self):
 
