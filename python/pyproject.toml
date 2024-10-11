@@ -1,0 +1,32 @@
+[build-system]
+# A list of packages that are needed to build your package:
+requires = ["hatchling"] # REQUIRED if [build-system] table is used
+# The name of the Python object that frontends will use to perform the build:
+build-backend = "hatchling.build" # If not defined, then legacy behavior can happen.
+
+[project]
+name = "aml_simulator"
+version = "0.1.0"
+readme = "readme.md"
+requires-python = ">=3.8"
+authors = [{ name = "Wai Leong", email = "leong.waileong@tookitaki.com" }]
+dependencies = [
+    "numpy",
+    "networkx",
+    "matplotlib>=3.1.2",
+    "pygraphviz",
+    "powerlaw",
+    "python-dateutil",
+    "Faker",
+    "pandas",
+]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["--import-mode=importlib"]
+
+[tool.hatch.build]
+packages = ["src/aml_simulator"]

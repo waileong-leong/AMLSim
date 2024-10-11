@@ -16,12 +16,11 @@ import cProfile
 
 
 from collections import Counter, defaultdict
-from amlsim.nominator import Nominator
-from amlsim.normal_model import NormalModel
+from aml_simulator.amlsim.nominator import Nominator
+from aml_simulator.amlsim.normal_model import NormalModel
 
-from amlsim.random_amount import RandomAmount
-from amlsim.rounded_amount import RoundedAmount
-
+from aml_simulator.amlsim.random_amount import RandomAmount
+from aml_simulator.amlsim.rounded_amount import RoundedAmount
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

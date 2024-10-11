@@ -8,7 +8,7 @@ from dateutil.parser import parse
 from random import random
 from collections import defaultdict, Counter
 
-from amlsim.account_data_type_lookup import AccountDataTypeLookup
+from aml_simulator.amlsim.account_data_type_lookup import AccountDataTypeLookup
 from faker import Faker
 import numpy as np
 
