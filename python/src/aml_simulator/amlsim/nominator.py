@@ -1,8 +1,7 @@
 import networkx as nx
-from aml_simulator.amlsim.normal_model import NormalModel
 
 class Nominator:
-    def __init__(self, g : nx.Graph, degree_threshold):
+    def __init__(self, g, degree_threshold):
         self.g = g
         self.degree_threshold = degree_threshold
         self.remaining_count_dict = dict()
@@ -367,7 +366,7 @@ class Nominator:
 
     def is_in_type_relationship(self, type, main_id, node_ids=set()):
         node_ids = set(node_ids)
-        normal_models : list[NormalModel] = self.g.nodes[main_id]['normal_models']
+        normal_models = self.g.nodes[main_id]['normal_models']
         filtereds = (nm for nm in normal_models if nm.type == type and nm.main_id == main_id)
         return any(node_ids.issubset(filtered.node_ids) for filtered in filtereds)
 

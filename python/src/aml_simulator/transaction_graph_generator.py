@@ -446,8 +446,7 @@ class TransactionGenerator:
                 'country': [country] * num,
                 'business': [business] * num,
                 'bank_id': [bank_id] * num,
-                'is_sar': [False] * num,
-                'normal_models': [list()] * num
+                'is_sar': [False] * num
             })
 
         # Apply the function to each row and concatenate the results
@@ -496,7 +495,7 @@ class TransactionGenerator:
 
         for k,v in attr.items():
             self.g.nodes[acct_id][k] = v
-
+        self.g.nodes[acct_id]['normal_models'] = list()
         self.bank_to_accts[attr['bank_id']].add(acct_id)
         self.acct_to_bank[acct_id] = attr['bank_id']
 
@@ -584,7 +583,6 @@ class TransactionGenerator:
 
     def build_normal_models(self):
         while(self.nominator.has_more()):
-            logger.info("Normal model counts %s", self.nominator.number_unused())
             for type in self.nominator.types():
                 count = self.nominator.count(type)
                 if count > 0:
@@ -741,77 +739,54 @@ class TransactionGenerator:
         
 
     def load_alert_patterns(self):
-        """Load an AML typology parameter file using pandas - optimized version
+        """Load an AML typology parameter file using pandas
         :return:
         """
         alert_file = os.path.join(self.input_dir, self.alert_file)
 
-        # Read the CSV file using pandas with explicit dtypes
-        dtypes = {
-            'count': 'int32',
-            'type': 'category',
-            'schedule_id': 'int32',
-            'min_accounts': 'int32',
-            'max_accounts': 'int32',
-            'min_amount': 'float32',
-            'max_amount': 'float32',
-            'min_period': 'int32',
-            'max_period': 'int32',
-            'bank_id': 'category',
-            'is_sar': 'bool'
-        }
+        try:
+            # Read the CSV file using pandas
+            df = pd.read_csv(alert_file)
 
-        df = pd.read_csv(alert_file, dtype=dtypes)
+            # Generate transaction set
+            count = 0
+            for _, row in df.iterrows():
+                if row['type'] not in self.alert_types:
+                    logger.warning(f"Pattern type name ({row['type']}) must be one of {str(self.alert_types.keys())}")
+                    continue
 
-        # Validate typology names
-        invalid_types = set(df['type']) - set(self.alert_types.keys())
-        if invalid_types:
-            logger.warning(f"Invalid pattern type names found: {invalid_types}")
-            df = df[df['type'].isin(self.alert_types.keys())]
+                num_patterns = int(row['count'])
+                for _ in range(num_patterns):
+                    # num_accts = random.randint(row['min_accounts'], row['max_accounts'])
+                    num_accts = random.randrange(row['min_accounts'], row['max_accounts'] + 1)
+                    # period = random.randint(row['min_period'], row['max_period'])
+                    period = random.randrange(row['min_period'], row['max_period'] + 1)
+                    bank_id = row['bank_id'] if pd.notna(row['bank_id']) else ""
 
-        # Vectorized random number generation
-        total_patterns = df['count'].sum()
-        random_accts = np.random.randint(df['min_accounts'].values, df['max_accounts'].values + 1, total_patterns)
-        random_periods = np.random.randint(df['min_period'].values, df['max_period'].values + 1, total_patterns)
-        random_amounts = np.random.uniform(df['min_amount'].values, df['max_amount'].values, total_patterns)
+                    self.add_aml_typology(
+                        is_sar=parse_flag(row['is_sar']),
+                        typology_name=row['type'],
+                        num_accounts=num_accts,
+                        min_amount=parse_float(row['min_amount']),
+                        max_amount=parse_float(row['max_amount']),
+                        period=period,
+                        bank_id=bank_id,
+                        schedule=int(row['schedule_id'])
+                    )
+                    count += 1
+                    if count % 1000 == 0:
+                        logger.info(f"Created {count} alerts")
 
-        # Create expanded DataFrame
-        expanded_data = []
-        start_idx = 0
-        for _, row in df.iterrows():
-            end_idx = start_idx + row['count']
-            for i in range(start_idx, end_idx):
-                expanded_data.append({
-                    'is_sar': row['is_sar'],
-                    'typology_name': row['type'],
-                    'num_accts': random_accts[i],
-                    'amount': random_amounts[i],
-                    'period': random_periods[i],
-                    'bank_id': row['bank_id'],
-                    'schedule': row['schedule_id']
-                })
-            start_idx = end_idx
-
-        expanded_df = pd.DataFrame(expanded_data)
-
-        # Batch process alerts
-        batch_size = 1000
-        for i in range(0, len(expanded_df), batch_size):
-            batch = expanded_df.iloc[i:i+batch_size]
-            for _, alert in batch.iterrows():
-                self.add_aml_typology(
-                    alert['is_sar'],
-                    alert['typology_name'],
-                    alert['num_accts'],
-                    alert['amount'],
-                    alert['amount'],  # Using the same amount for min and max
-                    alert['period'],
-                    alert['bank_id'],
-                    alert['schedule']
-                )
-            logger.info(f"Created {min(i + batch_size, len(expanded_df))} alerts")
-
-        logger.info(f"Total alerts created: {len(expanded_df)}")
+        except FileNotFoundError:
+            logger.error(f"Alert file not found: {alert_file}")
+        except pd.errors.EmptyDataError:
+            logger.error(f"Alert file is empty: {alert_file}")
+        except pd.errors.ParserError as e:
+            logger.error(f"Error parsing alert file: {e}")
+        except KeyError as e:
+            logger.error(f"Missing required column in alert file: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error while loading alert patterns: {e}")
 
     def add_aml_typology(self, is_sar, typology_name, num_accounts, min_amount, max_amount, period, bank_id="", schedule=1):
         """Add an AML typology transaction set
