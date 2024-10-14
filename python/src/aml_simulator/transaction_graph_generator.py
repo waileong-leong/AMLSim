@@ -254,15 +254,12 @@ class TransactionGenerator:
         self.acct_file = os.path.join(self.input_dir, self.account_file)
 
         def get_types(type_csv):
-            tx_types = list()
-            with open(type_csv, "r") as _rf:
-                reader = csv.reader(_rf)
-                next(reader)
-                for row in reader:
-                    if row[0].startswith("#"):
-                        continue
-                    ttype = row[0]
-                    tx_types.extend([ttype] * int(row[1]))
+            # Read the CSV file, skipping rows that start with '#'
+            df = pd.read_csv(type_csv, comment='#')
+            
+            # Create a list of types, repeating each type based on its count
+            tx_types = df.apply(lambda row: [row.iloc[0]] * row.iloc[1], axis=1).explode().tolist()
+            
             return tx_types
 
         self.tx_types = get_types(os.path.join(self.input_dir, self.type_file))
@@ -383,99 +380,85 @@ class TransactionGenerator:
         self.attr_names.extend(["first_name", "last_name", "street_addr", "city", "state", "zip",
                                 "gender", "phone_number", "birth_date", "ssn", "lon", "lat"])
 
-        with open(self.acct_file, "r") as rf:
-            reader = csv.reader(rf)
-            header = next(reader)
-            name2idx = {n: i for i, n in enumerate(header)}
-            idx_aid = name2idx["uuid"]
-            idx_first_name = name2idx["first_name"]
-            idx_last_name = name2idx["last_name"]
-            idx_street_addr = name2idx["street_addr"]
-            idx_city = name2idx["city"]
-            idx_state = name2idx["state"]
-            idx_zip = name2idx["zip"]
-            idx_gender = name2idx["gender"]
-            idx_phone_number = name2idx["phone_number"]
-            idx_birth_date = name2idx["birth_date"]
-            idx_ssn = name2idx["ssn"]
-            idx_lon = name2idx["lon"]
-            idx_lat = name2idx["lat"]
+        # Read CSV file
+        df = pd.read_csv(self.acct_file, comment='#')
 
-            default_country = "US"
-            default_acct_type = "I"
+        default_country = "US"
+        default_acct_type = "I"
 
-            count = 0
-            for row in reader:
-                if row[0].startswith("#"):  # Comment line
-                    continue
-                aid = row[idx_aid]
-                first_name = row[idx_first_name]
-                last_name = row[idx_last_name]
-                street_addr = row[idx_street_addr]
-                city = row[idx_city]
-                state = row[idx_state]
-                zip_code = row[idx_zip]
-                gender = row[idx_gender]
-                phone_number = row[idx_phone_number]
-                birth_date = row[idx_birth_date]
-                ssn = row[idx_ssn]
-                lon = row[idx_lon]
-                lat = row[idx_lat]
-                model = default_model
+        # Function to calculate start and end
+        def calculate_start_end(row):
+            if start_day is not None and start_range is not None:
+                start = start_day + random.randrange(start_range)
+            else:
+                start = -1
 
-                if start_day is not None and start_range is not None:
-                    start = start_day + random.randrange(start_range)
-                else:
-                    start = -1
+            if end_day is not None and end_range is not None:
+                end = end_day - random.randrange(end_range)
+            else:
+                end = -1
 
-                if end_day is not None and end_range is not None:
-                    end = end_day - random.randrange(end_range)
-                else:
-                    end = -1
+            return pd.Series({'start': start, 'end': end})
 
-                attr = {"first_name": first_name, "last_name": last_name, "street_addr": street_addr,
-                        "city": city, "state": state, "zip": zip_code, "gender": gender,
-                        "phone_number": phone_number, "birth_date": birth_date, "ssn": ssn, "lon": lon, "lat": lat}
+        # Apply the function to create start and end columns
+        df[['start', 'end']] = df.apply(calculate_start_end, axis=1)
 
-                init_balance = random.uniform(min_balance, max_balance)  # Generate the initial balance
-                self.add_account(aid, init_balance=init_balance, country=default_country, business=default_acct_type, is_sar=False, **attr)
-                count += 1
+        # Generate initial balance
+        df['init_balance'] = np.random.uniform(min_balance, max_balance, size=len(df))
+
+        # Add accounts
+        for _, row in df.iterrows():
+            attr = row[["first_name", "last_name", "street_addr", "city", "state", "zip",
+                        "gender", "phone_number", "birth_date", "ssn", "lon", "lat"]].to_dict()
+            
+            self.add_account(row['uuid'], init_balance=row['init_balance'], 
+                            country=default_country, business=default_acct_type, 
+                            is_sar=False, **attr)
+
+        return len(df)  # Return the count of added accounts
 
     def set_num_accounts(self):
         df = pd.read_csv(self.acct_file, comment='#')
         self.num_accounts = df['count'].sum()
 
     def load_account_list_param(self):
-
         """Load and add account vertices from a CSV file with aggregated parameters
         Each row may represent two or more accounts
         :param acct_file: Account parameter file path
         """
+        
+        # Read CSV file
+        df = pd.read_csv(self.acct_file, comment='#')
+        
+        # Function to generate accounts for each row
+        def generate_accounts(row):
+            num = int(row['count'])
+            min_balance = row['min_balance']
+            max_balance = row['max_balance']
+            country = row['country']
+            business = row['business_type']
+            bank_id = row['bank_id'] if pd.notna(row['bank_id']) else self.default_bank_id
+            
+            init_balances = np.random.uniform(min_balance, max_balance, num)
+            
+            return pd.DataFrame({
+                'init_balance': init_balances,
+                'country': [country] * num,
+                'business': [business] * num,
+                'bank_id': [bank_id] * num,
+                'is_sar': [False] * num,
+                'normal_models': [list()] * num
+            })
 
-        with open(self.acct_file, "r") as rf:
-            reader = csv.reader(rf)
-            # Parse header
-            header = next(reader)
+        # Apply the function to each row and concatenate the results
+        accounts_df = pd.concat(df.apply(generate_accounts, axis=1).to_list(),ignore_index = True)
+        
+        # Add accounts
+        for idx, row in accounts_df.iterrows():
+            self.add_account(idx, **row.to_dict())
 
-            acct_id = 0
-            for row in reader:
-                if row[0].startswith("#"):
-                    continue
-                num = int(row[header.index('count')])
-                min_balance = parse_float(row[header.index('min_balance')])
-                max_balance = parse_float(row[header.index('max_balance')])
-                country = row[header.index('country')]
-                business = row[header.index('business_type')]
-                bank_id = row[header.index('bank_id')] 
-                if bank_id is None:
-                    bank_id = self.default_bank_id
-
-                for i in range(num):
-                    init_balance = random.uniform(min_balance, max_balance)  # Generate amount
-                    self.add_account(acct_id, init_balance=init_balance, country=country, business=business, bank_id=bank_id, is_sar=False, normal_models=list())
-                    acct_id += 1
-
-        logger.info("Generated %d accounts." % self.num_accounts)
+        self.num_accounts = len(accounts_df)
+        logger.info(f"Generated {self.num_accounts} accounts.")
 
     def generate_normal_transactions(self):
         """Generate a base directed graph from degree sequences
@@ -577,38 +560,31 @@ class TransactionGenerator:
 
 
     def load_normal_models(self):
-        """Load a Normal Model parameter file
-        """
+        """Load a Normal Model parameter file and parse it"""
         normal_models_file = os.path.join(self.input_dir, self.normal_models_file)
-        with open(normal_models_file, "r") as csvfile:
-            reader = csv.reader(csvfile)
-            self.read_normal_models(reader)
-
-
-    def read_normal_models(self, reader):
-        """Parse the Normal Model parameter file
-        """
-        header = next(reader)
-
+        
+        # Read CSV file
+        df = pd.read_csv(normal_models_file)
+        
         self.nominator = Nominator(self.g, self.degree_threshold)
-
-        for row in reader:
-            count = int(row[header.index('count')])
-            type = row[header.index('type')]
-            schedule_id = int(row[header.index('schedule_id')])
-            min_accounts = int(row[header.index('min_accounts')])
-            max_accounts = int(row[header.index('max_accounts')])
-            min_period = int(row[header.index('min_period')])
-            max_period = int(row[header.index('max_period')])
-            bank_id = row[header.index('bank_id')]
-            if bank_id is None:
-                bank_id = self.default_bank_id
-
-            self.nominator.initialize_count(type, count)
+        
+        # Process each row
+        for _, row in df.iterrows():
+            count = int(row['count'])
+            model_type = row['type']
+            schedule_id = int(row['schedule_id'])
+            min_accounts = int(row['min_accounts'])
+            max_accounts = int(row['max_accounts'])
+            min_period = int(row['min_period'])
+            max_period = int(row['max_period'])
+            bank_id = row['bank_id'] if pd.notna(row['bank_id']) else self.default_bank_id
+            
+            self.nominator.initialize_count(model_type, count)
 
 
     def build_normal_models(self):
         while(self.nominator.has_more()):
+            logger.info("Normal model counts %s", self.nominator.number_unused())
             for type in self.nominator.types():
                 count = self.nominator.count(type)
                 if count > 0:
@@ -765,82 +741,77 @@ class TransactionGenerator:
         
 
     def load_alert_patterns(self):
-        """Load an AML typology parameter file
+        """Load an AML typology parameter file using pandas - optimized version
         :return:
         """
         alert_file = os.path.join(self.input_dir, self.alert_file)
 
-        idx_num = None
-        idx_type = None
-        idx_schedule = None
-        idx_min_accts = None
-        idx_max_accts = None
-        idx_min_amt = None
-        idx_max_amt = None
-        idx_min_period = None
-        idx_max_period = None
-        idx_bank = None
-        idx_sar = None
+        # Read the CSV file using pandas with explicit dtypes
+        dtypes = {
+            'count': 'int32',
+            'type': 'category',
+            'schedule_id': 'int32',
+            'min_accounts': 'int32',
+            'max_accounts': 'int32',
+            'min_amount': 'float32',
+            'max_amount': 'float32',
+            'min_period': 'int32',
+            'max_period': 'int32',
+            'bank_id': 'category',
+            'is_sar': 'bool'
+        }
 
-        with open(alert_file, "r") as rf:
-            reader = csv.reader(rf)
-            # Parse header
-            header = next(reader)
-            for i, k in enumerate(header):
-                if k == "count":  # Number of pattern subgraphs
-                    idx_num = i
-                elif k == "type":  # AML typology type (e.g. fan-out and cycle)
-                    idx_type = i
-                elif k == "schedule_id":  # Transaction scheduling type
-                    idx_schedule = i
-                elif k == "min_accounts":  # Minimum number of involved accounts
-                    idx_min_accts = i
-                elif k == "max_accounts":  # Maximum number of involved accounts
-                    idx_max_accts = i
-                elif k == "min_amount":  # Minimum initial transaction amount
-                    idx_min_amt = i
-                elif k == "max_amount":  # Maximum initial transaction amount
-                    idx_max_amt = i
-                elif k == "min_period":  # Minimum overall transaction period (number of simulation steps)
-                    idx_min_period = i
-                elif k == "max_period":  # Maximum overall transaction period (number of simulation steps)
-                    idx_max_period = i
-                elif k == "bank_id":  # Bank ID for internal-bank transactions
-                    idx_bank = i
-                elif k == "is_sar":  # SAR flag
-                    idx_sar = i
-                else:
-                    logger.warning("Unknown column name in %s: %s" % (alert_file, k))
+        df = pd.read_csv(alert_file, dtype=dtypes)
 
-            # Generate transaction set
-            count = 0
-            for row in reader:
-                if len(row) == 0 or row[0].startswith("#"):
-                    continue
-                num_patterns = int(row[idx_num])  # Number of alert patterns
-                typology_name = row[idx_type]
-                schedule = int(row[idx_schedule])
-                min_accts = int(row[idx_min_accts])
-                max_accts = int(row[idx_max_accts])
-                min_amount = parse_float(row[idx_min_amt])
-                max_amount = parse_float(row[idx_max_amt])
-                min_period = parse_int(row[idx_min_period])
-                max_period = parse_int(row[idx_max_period])
-                bank_id = row[idx_bank] if idx_bank is not None else ""  # If empty, it has inter-bank transactions
-                is_sar = parse_flag(row[idx_sar])
+        # Validate typology names
+        invalid_types = set(df['type']) - set(self.alert_types.keys())
+        if invalid_types:
+            logger.warning(f"Invalid pattern type names found: {invalid_types}")
+            df = df[df['type'].isin(self.alert_types.keys())]
 
-                if typology_name not in self.alert_types:
-                    logger.warning("Pattern type name (%s) must be one of %s"
-                                   % (typology_name, str(self.alert_types.keys())))
-                    continue
+        # Vectorized random number generation
+        total_patterns = df['count'].sum()
+        random_accts = np.random.randint(df['min_accounts'].values, df['max_accounts'].values + 1, total_patterns)
+        random_periods = np.random.randint(df['min_period'].values, df['max_period'].values + 1, total_patterns)
+        random_amounts = np.random.uniform(df['min_amount'].values, df['max_amount'].values, total_patterns)
 
-                for i in range(num_patterns):
-                    num_accts = random.randrange(min_accts, max_accts + 1)
-                    period = random.randrange(min_period, max_period + 1)
-                    self.add_aml_typology(is_sar, typology_name, num_accts, min_amount, max_amount, period, bank_id, schedule)
-                    count += 1
-                    if count % 1000 == 0:
-                        logger.info("Created %d alerts" % count)
+        # Create expanded DataFrame
+        expanded_data = []
+        start_idx = 0
+        for _, row in df.iterrows():
+            end_idx = start_idx + row['count']
+            for i in range(start_idx, end_idx):
+                expanded_data.append({
+                    'is_sar': row['is_sar'],
+                    'typology_name': row['type'],
+                    'num_accts': random_accts[i],
+                    'amount': random_amounts[i],
+                    'period': random_periods[i],
+                    'bank_id': row['bank_id'],
+                    'schedule': row['schedule_id']
+                })
+            start_idx = end_idx
+
+        expanded_df = pd.DataFrame(expanded_data)
+
+        # Batch process alerts
+        batch_size = 1000
+        for i in range(0, len(expanded_df), batch_size):
+            batch = expanded_df.iloc[i:i+batch_size]
+            for _, alert in batch.iterrows():
+                self.add_aml_typology(
+                    alert['is_sar'],
+                    alert['typology_name'],
+                    alert['num_accts'],
+                    alert['amount'],
+                    alert['amount'],  # Using the same amount for min and max
+                    alert['period'],
+                    alert['bank_id'],
+                    alert['schedule']
+                )
+            logger.info(f"Created {min(i + batch_size, len(expanded_df))} alerts")
+
+        logger.info(f"Total alerts created: {len(expanded_df)}")
 
     def add_aml_typology(self, is_sar, typology_name, num_accounts, min_amount, max_amount, period, bank_id="", schedule=1):
         """Add an AML typology transaction set

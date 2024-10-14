@@ -17,7 +17,6 @@
     "transaction_model": 1,
     "margin_ratio": 0.1,
     "bank_id": "default",
-
     "cash_in": {
       "normal_interval": 100,
       "fraud_interval": 50,
@@ -36,7 +35,7 @@
     }
   },
   "input": {
-    "directory": "paramFiles/1K",
+    "directory": "paramFiles/100",
     "schema": "schema.json",
     "accounts": "accounts.csv",
     "alert_patterns": "alertPatterns.csv",
@@ -87,4 +86,3 @@
     "diameter": "diameter.png"
   }
 }
-
