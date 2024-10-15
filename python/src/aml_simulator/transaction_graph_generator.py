@@ -755,7 +755,7 @@ class TransactionGenerator:
                     logger.warning(f"Pattern type name ({row['type']}) must be one of {str(self.alert_types.keys())}")
                     continue
 
-                num_patterns = int(row['count'])
+                num_patterns = row['count']
                 for _ in range(num_patterns):
                     # num_accts = random.randint(row['min_accounts'], row['max_accounts'])
                     num_accts = random.randrange(row['min_accounts'], row['max_accounts'] + 1)
@@ -764,14 +764,14 @@ class TransactionGenerator:
                     bank_id = row['bank_id'] if pd.notna(row['bank_id']) else ""
 
                     self.add_aml_typology(
-                        is_sar=parse_flag(row['is_sar']),
+                        is_sar=row['is_sar'],
                         typology_name=row['type'],
                         num_accounts=num_accts,
-                        min_amount=parse_float(row['min_amount']),
-                        max_amount=parse_float(row['max_amount']),
+                        min_amount=row['min_amount'],
+                        max_amount=row['max_amount'],
                         period=period,
                         bank_id=bank_id,
-                        schedule=int(row['schedule_id'])
+                        schedule=row['schedule_id']
                     )
                     count += 1
                     if count % 1000 == 0:
@@ -852,6 +852,13 @@ class TransactionGenerator:
 
 
         if typology_name == "fan_in":  # fan_in pattern (multiple accounts --> single (main) account)
+            # Fan-in pattern: Multiple accounts send money to a single (main) account
+            # Logic:
+            # 1. Select a main account
+            # 2. Select multiple sub-accounts (num_accounts - 1)
+            # 3. Create transactions from each sub-account to the main account
+            # 4. All transactions have the same amount but occur on random dates within the period
+
             main_acct, main_bank_id = add_main_acct()
             num_neighbors = num_accounts - 1
             amount = RoundedAmount(min_amount, max_amount).getAmount()
@@ -875,6 +882,13 @@ class TransactionGenerator:
                 add_edge(orig, main_acct, amount, date)
 
         elif typology_name == "fan_out":  # fan_out pattern (single (main) account --> multiple accounts)
+            # Fan-out pattern: A single (main) account sends money to multiple accounts
+            # Logic:
+            # 1. Select a main account
+            # 2. Select multiple sub-accounts (num_accounts - 1)
+            # 3. Create transactions from the main account to each sub-account
+            # 4. All transactions have the same amount but occur on random dates within the period
+    
             main_acct, main_bank_id = add_main_acct()
             num_neighbors = num_accounts - 1
             amount = RoundedAmount(min_amount, max_amount).getAmount()
@@ -898,6 +912,13 @@ class TransactionGenerator:
                 add_edge(main_acct, bene, amount, date)
 
         elif typology_name == "bipartite":  # bipartite (originators -> many-to-many -> beneficiaries)
+            # Bipartite pattern: Two groups of accounts, with all accounts in the first group
+            # sending money to all accounts in the second group
+            # Logic:
+            # 1. Divide accounts into two groups: originators and beneficiaries
+            # 2. Create transactions from each originator to each beneficiary
+            # 3. Each transaction has a random amount and date within the period
+
             orig_bank_id = random.choice(self.get_all_bank_ids())
             if is_external:
                 bene_bank_id = random.choice([b for b in self.get_all_bank_ids() if b != orig_bank_id])
@@ -924,6 +945,13 @@ class TransactionGenerator:
                 add_edge(orig, bene, amount, date)
 
         elif typology_name == "stack":  # stacked bipartite layers
+            # Stacked bipartite layers pattern: Three groups of accounts, with transactions
+            # flowing from the first group to the second, and then from the second to the third
+            # Logic:
+            # 1. Divide accounts into three groups: originators, intermediaries, and beneficiaries
+            # 2. Create transactions from each originator to each intermediary
+            # 3. Create transactions from each intermediary to each beneficiary
+            # 4. Each transaction has a random amount and date within the period
             if is_external:
                 if len(self.get_all_bank_ids()) >= 3:
                     [orig_bank_id, mid_bank_id, bene_bank_id] = random.sample(self.get_all_bank_ids(), 3)
@@ -964,6 +992,11 @@ class TransactionGenerator:
                 add_edge(orig, bene, amount, date)
 
         elif typology_name == "random":  # Random transactions among members
+            # Random transaction pattern: Random transactions between accounts
+            # Logic:
+            # 1. Select a group of accounts
+            # 2. Create random transactions between these accounts
+            # 3. Each transaction has a random amount and date within the period
             amount = RandomAmount(min_amount, max_amount).getAmount()
             date = random.randrange(start_date, end_date + 1)
 
@@ -996,6 +1029,13 @@ class TransactionGenerator:
                     prev_acct = next_acct
 
         elif typology_name == "cycle":  # Cycle transactions
+            # Cycle transaction pattern: Transactions form a cycle through all accounts
+            # Logic:
+            # 1. Select a group of accounts
+            # 2. Create transactions forming a cycle: account1 -> account2 -> account3 -> ... -> account1
+            # 3. Each transaction has a slightly smaller amount than the previous one (to simulate fees)
+            # 4. Transactions occur on sorted random dates within the period
+
             amount = RandomAmount(min_amount, max_amount).getAmount()
             dates = sorted([random.randrange(start_date, end_date + 1) for _ in range(num_accounts)])
 
@@ -1035,6 +1075,14 @@ class TransactionGenerator:
                 amount = amount - margin  # max(amount - margin, min_amount)
 
         elif typology_name == "scatter_gather":  # Scatter-Gather (fan-out -> fan-in)
+            # Scatter-Gather pattern: One account sends to multiple accounts, which then send to a final account
+            # Logic:
+            # 1. Select three groups: one originator, multiple intermediaries, one beneficiary
+            # 2. Create transactions from the originator to each intermediary (scatter phase)
+            # 3. Create transactions from each intermediary to the beneficiary (gather phase)
+            # 4. Scatter transactions occur in the first half of the period, gather in the second half
+            # 5. Each intermediary keeps a small amount (margin) before sending to the beneficiary
+
             if is_external:
                 if len(self.get_all_bank_ids()) >= 3:
                     [orig_bank_id, mid_bank_id, bene_bank_id] = random.sample(self.get_all_bank_ids(), 3)
@@ -1070,6 +1118,14 @@ class TransactionGenerator:
                 add_edge(mid_acct, bene_acct, amount, gather_date)
 
         elif typology_name == "gather_scatter":  # Gather-Scatter (fan-in -> fan-out)
+            # Gather-Scatter pattern: Multiple accounts send to one account, which then sends to multiple accounts
+            # Logic:
+            # 1. Select three groups: multiple originators, one intermediary, multiple beneficiaries
+            # 2. Create transactions from each originator to the intermediary (gather phase)
+            # 3. Create transactions from the intermediary to each beneficiary (scatter phase)
+            # 4. Gather transactions occur in the first half of the period, scatter in the second half
+            # 5. The intermediary accumulates all gathered amounts before scattering
+    
             if is_external:
                 if len(self.get_all_bank_ids()) >= 3:
                     [orig_bank_id, mid_bank_id, bene_bank_id] = random.sample(self.get_all_bank_ids(), 3)
