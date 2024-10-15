@@ -1,7 +1,7 @@
 {
   "general": {
     "random_seed": 0,
-    "simulation_name": "10K",
+    "simulation_name": "sample",
     "total_steps": 720,
     "base_date": "2017-01-01"
   },
@@ -45,7 +45,7 @@
     "is_aggregated_accounts": true
   },
   "temporal": {
-    "directory": "tmp",
+    "directory": "python/tmp",
     "transactions": "transactions.csv",
     "accounts": "accounts.csv",
     "alert_members": "alert_members.csv",

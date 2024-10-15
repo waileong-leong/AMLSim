@@ -19,10 +19,12 @@ dependencies = [
     "python-dateutil",
     "Faker",
     "pandas",
+    "mesa",
+    "seaborn",
 ]
 
 [project.optional-dependencies]
-test = ["pytest"]
+test = ["pytest", "jupyter"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
